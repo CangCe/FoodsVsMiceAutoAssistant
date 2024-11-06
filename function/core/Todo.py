@@ -1635,6 +1635,9 @@ class ThreadTodo(QThread):
         # 读取json文件
         task_sequence = read_json_to_task_sequence()
 
+        # 过滤掉未启用的任务
+        task_sequence = [task for task in task_sequence if task.get("enabled", True)]
+
         # 获取最大task_id
         max_tid = 1
         for quest in task_sequence:
