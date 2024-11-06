@@ -257,6 +257,12 @@ class QMWEditorOfTaskSequence(QMainWindow):
         line_widget.setObjectName('line_widget')
         line_layout = QHBoxLayout(line_widget)
 
+        # 启用复选框
+        enable_checkbox = QCheckBox('启用')
+        enable_checkbox.setObjectName('enable_checkbox')
+        enable_checkbox.setChecked(task.get("enabled", True))  # 默认启用
+        line_layout.addWidget(enable_checkbox)
+
         # task_id + type
         layout = QHBoxLayout()
         line_layout.addLayout(layout)
@@ -551,6 +557,8 @@ class QMWEditorOfTaskSequence(QMainWindow):
 
         # 读取
         for task in task_sequence_list:
+            # 读取任务启用状态
+            task["enabled"] = task.get("enabled", True)
             self.add_task(task)
             # 出现读取失败, 中止
             if self.could_not_load_json_succeed:
@@ -596,6 +604,10 @@ class QMWEditorOfTaskSequence(QMainWindow):
         for w_line in list_line_widgets:
             data_line = {}
 
+            # 获取启用复选框状态
+            enable_checkbox = w_line.findChild(QCheckBox, 'enable_checkbox')
+            data_line['enabled'] = enable_checkbox.isChecked()
+
             label_task_type = w_line.findChild(QLabel, 'label_task_type')
             task_type = label_task_type.text()
             data_line['task_type'] = task_type
@@ -604,9 +616,9 @@ class QMWEditorOfTaskSequence(QMainWindow):
             task_id = label_task_id.text()
             data_line['task_id'] = int(task_id)
 
+            # 其余代码保持不变，用于保存任务参数
             data_line["task_args"] = {}
             args = data_line["task_args"]
-
             match task_type:
                 case "战斗":
                     widget_input = w_line.findChild(QLineEdit, 'w_stage_id')
