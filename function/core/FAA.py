@@ -2060,35 +2060,35 @@ class FAA:
         输入二级密码. 通过背包内尝试拆主武器
         """
 
-        self.signal_print_to_ui.emit(text=f"[输入二级密码] [{self.player}P] 开始.")
-
-        # 打开背包
-        self.action_bottom_menu(mode="背包")
-        self.signal_print_to_ui.emit(text=f"[输入二级密码] [{self.player}P] 背包图标可能需要加载, 等待10s")
-        time.sleep(10)
-
-        # 卸下主武器
-        T_ACTION_QUEUE_TIMER.add_click_to_queue(handle=self.handle, x=210, y=445)
-        time.sleep(1)
-
-        # 点击输入框选中
-        T_ACTION_QUEUE_TIMER.add_click_to_queue(handle=self.handle, x=440, y=300)
-        time.sleep(1)
-
-        # 输入二级密码
-        for key in password:
-            T_ACTION_QUEUE_TIMER.char_input(handle=self.handle, char=key)
-            time.sleep(0.1)
-        time.sleep(1)
-
-        # 确定二级密码
-        T_ACTION_QUEUE_TIMER.add_click_to_queue(handle=self.handle, x=435, y=388)
-        time.sleep(1)
-
-        # 关闭背包
-        self.action_exit(mode="普通红叉")
-
-        self.signal_print_to_ui.emit(text=f"[输入二级密码] [{self.player}P] 结束.")
+        #self.signal_print_to_ui.emit(text=f"[输入二级密码] [{self.player}P] 开始.")
+#
+        ## 打开背包
+        #self.action_bottom_menu(mode="背包")
+        #self.signal_print_to_ui.emit(text=f"[输入二级密码] [{self.player}P] 背包图标可能需要加载, 等待10s")
+        #time.sleep(10)
+#
+        ## 卸下主武器
+        #T_ACTION_QUEUE_TIMER.add_click_to_queue(handle=self.handle, x=210, y=445)
+        #time.sleep(1)
+#
+        ## 点击输入框选中
+        #T_ACTION_QUEUE_TIMER.add_click_to_queue(handle=self.handle, x=440, y=300)
+        #time.sleep(1)
+#
+        ## 输入二级密码
+        #for key in password:
+        #    T_ACTION_QUEUE_TIMER.char_input(handle=self.handle, char=key)
+        #    time.sleep(0.1)
+        #time.sleep(1)
+#
+        ## 确定二级密码
+        #T_ACTION_QUEUE_TIMER.add_click_to_queue(handle=self.handle, x=435, y=388)
+        #time.sleep(1)
+#
+        ## 关闭背包
+        #self.action_exit(mode="普通红叉")
+#
+        #self.signal_print_to_ui.emit(text=f"[输入二级密码] [{self.player}P] 结束.")
 
     def gift_flower(self):
         """送免费花"""
