@@ -118,7 +118,7 @@ class QMWEditorOfTaskSequence(QMainWindow):
         设置界面样式
         """
         # 设置窗口标题
-        self.setWindowTitle('事项序列编辑器')
+        self.setWindowTitle('任务序列编辑器')
         # 设置窗口图标
         self.setWindowIcon(QIcon(PATHS["logo"] + "\\圆角-FetTuo-192x.png"))
 
@@ -258,7 +258,7 @@ class QMWEditorOfTaskSequence(QMainWindow):
         line_layout = QHBoxLayout(line_widget)
 
         # 启用复选框
-        enable_checkbox = QCheckBox('启用')
+        enable_checkbox = QCheckBox('')
         enable_checkbox.setObjectName('enable_checkbox')
         enable_checkbox.setChecked(task.get("enabled", True))  # 默认启用
         line_layout.addWidget(enable_checkbox)
