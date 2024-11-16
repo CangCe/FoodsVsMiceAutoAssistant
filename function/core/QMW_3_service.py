@@ -10,7 +10,7 @@ import win32gui
 from PyQt6 import QtCore, QtGui, QtWidgets
 from PyQt6.QtWidgets import QMessageBox
 
-from function.core.FAA import FAA
+from battle_plan_not_active.FAA import FAA
 from function.core.FAA_extra_readimage import kill_process
 from function.core.QMW_2_load_settings import CommonHelper, QMainWindowLoadSettings
 from function.core.QMW_EditorOfBattlePlan import QMWEditorOfBattlePlan
