@@ -15,7 +15,7 @@ from function.common.thread_with_exception import ThreadWithException
 from function.core.FAA_extra_readimage import read_and_get_return_information, kill_process
 from function.core.analyzer_of_loot_logs import update_dag_graph, find_longest_path_from_dag
 from function.core_battle.CardManager import CardManager
-from function.globals import g_extra
+from function.globals import EXTRA, SIGNAL
 from function.globals.g_resources import RESOURCE_P
 from function.globals.get_paths import PATHS
 from function.globals.log import CUS_LOGGER
@@ -31,7 +31,7 @@ class ThreadTodo(QThread):
     signal_start_todo_2_battle = pyqtSignal(dict)
     signal_todo_lock = pyqtSignal(bool)
 
-    def __init__(self, faa_dict, opt, running_todo_plan_index, signal_dict, todo_id):
+    def __init__(self, faa_dict, opt, running_todo_plan_index, todo_id):
         super().__init__()
 
         # 用于暂停恢复
@@ -62,17 +62,9 @@ class ThreadTodo(QThread):
         # 工会管理器相关模块
         self.guild_manager = GuildManager()
 
-        # 好用的信号~
-        self.signal_dict = signal_dict
-        self.signal_print_to_ui = self.signal_dict["print_to_ui"]
-        self.signal_image_to_ui = self.signal_dict["image_to_ui"]
-        self.signal_dialog = self.signal_dict["dialog"]
-        self.signal_todo_end = self.signal_dict["end"]
-        self.signal_guild_manager_fresh = self.signal_dict["guild_manager_fresh"]
-
         # 读取 米苏物流 url 到全局变量
         if self.faa_dict[1].player == 1:
-            g_extra.GLOBAL_EXTRA.misu_logistics = self.opt["advanced_settings"]["misu_logistics_link"]
+            EXTRA.MISU_LOGISTICS = self.opt["advanced_settings"]["misu_logistics_link"]
 
     def stop(self):
 
@@ -110,27 +102,17 @@ class ThreadTodo(QThread):
 
     def model_start_print(self, text):
         # 在函数执行前发送的信号
-        self.signal_print_to_ui.emit(text="", time=False)
-        self.signal_print_to_ui.emit(text=f"[{text}] Link Start!", color_level=1)
+        SIGNAL.PRINT_TO_UI.emit(text="", time=False)
+        SIGNAL.PRINT_TO_UI.emit(text=f"[{text}] Link Start!", color_level=1)
 
     def model_end_print(self, text):
-        self.signal_print_to_ui.emit(text=f"[{text}] Completed!", color_level=1)
+        SIGNAL.PRINT_TO_UI.emit(text=f"[{text}] Completed!", color_level=1)
 
     def change_lock(self, my_bool):
         self.my_lock = my_bool
 
-    def set_is_used_key_true(self):
-        """
-        在作战时, 只要有任何一方 使用了钥匙, 都设置两个号在本场作战均是用了钥匙
-        在战斗结束进行通报汇总分类 各个faa都依赖自身的该参数, 因此需要对两者都做更改
-        此外, 双人双线程时, 有两个本线程的实例控制的均为同样的faa实例, 若一方用钥匙,另一方也会悲改为用, 但魔塔不会存在该问题, 故暂时不管.
-        """
-
-        self.faa_dict[1].faa_battle.is_used_key = True
-        self.faa_dict[2].faa_battle.is_used_key = True
-
     def remove_outdated_log_images(self):
-        self.signal_print_to_ui.emit(f"正在清理过期的的log图片...")
+        SIGNAL.PRINT_TO_UI.emit(f"正在清理过期的的log图片...")
 
         now = datetime.datetime.now()
         time1 = int(self.opt["log_settings"]["log_other_settings"])
@@ -156,10 +138,10 @@ class ThreadTodo(QThread):
                     os.remove(file_path)
                     deleted_files_count += 1
 
-            self.signal_print_to_ui.emit(f"清理完成... {deleted_files_count}张图片已清理.")
+            SIGNAL.PRINT_TO_UI.emit(f"清理完成... {deleted_files_count}张图片已清理.")
         else:
-            self.signal_print_to_ui.emit("未开启过期日志清理功能")
-        self.signal_print_to_ui.emit("正在清理过期的高级战斗log...")
+            SIGNAL.PRINT_TO_UI.emit("未开启过期日志清理功能")
+        SIGNAL.PRINT_TO_UI.emit("正在清理过期的高级战斗log...")
 
         now = datetime.datetime.now()
         time2 = int(self.opt["log_settings"]["log_senior_settings"])
@@ -185,13 +167,9 @@ class ThreadTodo(QThread):
                     os.remove(file_path)
                     deleted_files_count += 1
 
-            self.signal_print_to_ui.emit(f"清理完成... {deleted_files_count}个文件已清理.")
+            SIGNAL.PRINT_TO_UI.emit(f"清理完成... {deleted_files_count}个文件已清理.")
         else:
-            self.signal_print_to_ui.emit(f"高级战斗日志清理已取消.")
-
-    def cus_quit(self):
-        CUS_LOGGER.debug("已激活ThreadTodo quit")
-        self.quit()
+            SIGNAL.PRINT_TO_UI.emit(f"高级战斗日志清理已取消.")
 
     """
     业务代码 - 战斗以外
@@ -227,7 +205,7 @@ class ThreadTodo(QThread):
             return
 
         # 在该动作前已经完成了游戏刷新 可以尽可能保证欢乐互娱不作妖
-        self.signal_print_to_ui.emit(
+        SIGNAL.PRINT_TO_UI.emit(
             text=f"[{title_text}] [二级功能] 您输入二级激活了该功能. " +
                  (f"兑换暗晶 + " if dark_crystal else f"") +
                  f"删除多余技能书, 目标:{player}P",
@@ -247,7 +225,7 @@ class ThreadTodo(QThread):
                 self.faa_dict[2].get_dark_crystal()
 
         # 执行完毕后立刻刷新游戏 以清除二级输入状态
-        #self.signal_print_to_ui.emit(
+        #SIGNAL.PRINT_TO_UI.emit(
         #    text=f"[{title_text}] [二级功能] 结束, 即将刷新游戏以清除二级输入的状态...", color_level=2)
 
         #self.batch_reload_game(player=player)
@@ -266,7 +244,7 @@ class ThreadTodo(QThread):
         if self.faa_dict[1].channel == self.faa_dict[2].channel:
             player = [1]
 
-        self.signal_print_to_ui.emit("Refresh Game...", color_level=1)
+        SIGNAL.PRINT_TO_UI.emit("Refresh Game...", color_level=1)
 
         CUS_LOGGER.debug(f"刷新游戏窗口 开始, 目标: {player}")
 
@@ -302,7 +280,7 @@ class ThreadTodo(QThread):
 
     def batch_click_refresh_btn(self):
 
-        self.signal_print_to_ui.emit("Refresh Game...", color_level=1)
+        SIGNAL.PRINT_TO_UI.emit("Refresh Game...", color_level=1)
 
         # 创建进程 -> 开始进程 -> 阻塞主进程
         self.thread_1p = ThreadWithException(
@@ -342,7 +320,7 @@ class ThreadTodo(QThread):
 
             if not self.opt["get_warm_gift"][f'{pid}p']["active"]:
 
-                self.signal_print_to_ui.emit(f"[{pid}P] 未激活领取温馨礼包", color_level=2)
+                SIGNAL.PRINT_TO_UI.emit(f"[{pid}P] 未激活领取温馨礼包", color_level=2)
                 continue
 
             else:
@@ -356,33 +334,33 @@ class ThreadTodo(QThread):
                     r = requests.get(url, timeout=10)  # 设置超时
                     r.raise_for_status()  # 如果响应状态不是200，将抛出HTTPError异常
                     message = r.json()['msg']
-                    self.signal_print_to_ui.emit(
+                    SIGNAL.PRINT_TO_UI.emit(
                         text=f'[{pid}P] 领取温馨礼包情况:' + message,
                         color_level=2)
 
                 except RequestException as e:
 
                     # 网络问题、超时、服务器无响应
-                    self.signal_print_to_ui.emit(
+                    SIGNAL.PRINT_TO_UI.emit(
                         text=f'[{pid}P] 领取温馨礼包情况: 失败, 欢乐互娱的服务器炸了, {e}',
                         color_level=2)
 
         """日氪"""
         player_active = [pid for pid in player if self.opt["advanced_settings"].get(f"top_up_money_{pid}p")]
         if player_active:
-            if g_extra.GLOBAL_EXTRA.ethical_mode:
-                self.signal_print_to_ui.emit(
+            if EXTRA.ETHICAL_MODE:
+                SIGNAL.PRINT_TO_UI.emit(
                     f'经FAA伦理核心审查, 日氪模块违反"能量限流"协议, 已被临时性抑制以符合最高伦理标准.', color_level=2)
             else:
-                self.signal_print_to_ui.emit(
+                SIGNAL.PRINT_TO_UI.emit(
                     f'FAA伦理核心已强制卸除, 日氪模块已通过授权, 即将激活并进入运行状态.', color_level=2)
                 for pid in player_active:
-                    self.signal_print_to_ui.emit(f'[{pid}P] 日氪1元开始, 该功能执行较慢, 防止卡顿...', color_level=2)
+                    SIGNAL.PRINT_TO_UI.emit(f'[{pid}P] 日氪1元开始, 该功能执行较慢, 防止卡顿...', color_level=2)
                     money_result = self.faa_dict[pid].sign_top_up_money()
-                    self.signal_print_to_ui.emit(f'[{pid}P] 日氪1元结束, 结果: {money_result}', color_level=2)
+                    SIGNAL.PRINT_TO_UI.emit(f'[{pid}P] 日氪1元结束, 结果: {money_result}', color_level=2)
 
         """双线程常规日常"""
-        self.signal_print_to_ui.emit(
+        SIGNAL.PRINT_TO_UI.emit(
             f"开始双线程 VIP签到 / 每日签到 / 美食活动 / 塔罗 / 法老 / 会长发任务 / 营地领钥匙 / 月卡礼包")
 
         # 创建进程
@@ -422,8 +400,12 @@ class ThreadTodo(QThread):
         title_text = "浇水 施肥 摘果"
         self.model_start_print(text=title_text)
 
+        # 归零尝试次数
+        try_times = 0
+
         for pid in player:
-            self.faa_dict[pid].fed_and_watered()
+            # 继承上一轮尝试次数
+            try_times = self.faa_dict[pid].fed_and_watered(try_times=try_times)
 
         self.model_end_print(text=title_text)
 
@@ -452,7 +434,7 @@ class ThreadTodo(QThread):
         if advance_mode:
             """激活了扫描公会贡献"""
             if self.opt["advanced_settings"]["guild_manager_active"]:
-                self.signal_print_to_ui.emit(
+                SIGNAL.PRINT_TO_UI.emit(
                     text=f"[{title_text}] [扫描公会贡献] 您激活了该功能.",
                     color_level=2)
 
@@ -466,7 +448,7 @@ class ThreadTodo(QThread):
                 )
 
                 # 完成扫描 触发信号刷新数据
-                self.signal_guild_manager_fresh.emit()
+                SIGNAL.GUILD_MANAGER_FRESH.emit()
 
                 # 退出工会页面
                 self.faa_dict[self.opt["advanced_settings"]["guild_manager_active"]].action_exit(mode="普通红叉")
@@ -476,7 +458,7 @@ class ThreadTodo(QThread):
 
         for mode in quests:
 
-            self.signal_print_to_ui.emit(text=f"[{title_text}] [{mode}] 开始...")
+            SIGNAL.PRINT_TO_UI.emit(text=f"[{title_text}] [{mode}] 开始...")
 
             # 创建进程 -> 开始进程 -> 阻塞主进程
             if 1 in player:
@@ -507,7 +489,7 @@ class ThreadTodo(QThread):
             if 2 in player:
                 self.thread_2p.join()
 
-            self.signal_print_to_ui.emit(text=f"[{title_text}] [{mode}] 结束")
+            SIGNAL.PRINT_TO_UI.emit(text=f"[{title_text}] [{mode}] 结束")
 
         self.model_end_print(text=title_text)
 
@@ -728,7 +710,7 @@ class ThreadTodo(QThread):
                 invite_success = self.invite(player_a=player_a, player_b=player_b)
 
                 if invite_success:
-                    self.signal_print_to_ui.emit(text="[单本轮战] 邀请成功")
+                    SIGNAL.PRINT_TO_UI.emit(text="[单本轮战] 邀请成功")
                     # 邀请成功 返回退出
                     return 0
 
@@ -736,10 +718,10 @@ class ThreadTodo(QThread):
                     failed_time += 1
                     mt_first_time = True
 
-                    self.signal_print_to_ui.emit(text=f"[单本轮战] 服务器抽风,进入竞技岛重新邀请...({failed_time}/3)")
+                    SIGNAL.PRINT_TO_UI.emit(text=f"[单本轮战] 服务器抽风,进入竞技岛重新邀请...({failed_time}/3)")
 
                     if failed_time == 3:
-                        self.signal_print_to_ui.emit(text="[单本轮战] 服务器抽风过头, 刷新游戏!")
+                        SIGNAL.PRINT_TO_UI.emit(text="[单本轮战] 服务器抽风过头, 刷新游戏!")
                         failed_round += 1
                         self.batch_reload_game()
                         break
@@ -748,7 +730,7 @@ class ThreadTodo(QThread):
                     faa_b.action_exit(mode="竞技岛")
 
             if failed_round == 3:
-                self.signal_print_to_ui.emit(text=f"[单本轮战] 刷新游戏次数过多")
+                SIGNAL.PRINT_TO_UI.emit(text=f"[单本轮战] 刷新游戏次数过多")
                 return 2
 
     def battle(self, player_a, player_b):
@@ -838,37 +820,27 @@ class ThreadTodo(QThread):
                 queue_todo = None
                 self.process = None
 
-            # 实例化放卡管理器
+            # 初始化放卡管理器
             self.thread_card_manager = CardManager(
-                faa_1=self.faa_dict[player_a],
-                faa_2=self.faa_dict[player_b],
+                faa_a=self.faa_dict[player_a],
+                faa_b=self.faa_dict[player_b],
                 check_interval=self.battle_check_interval,
                 solve_queue=queue_todo,
                 senior_interval=self.opt["senior_settings"]["interval"]
             )
 
-            self.thread_card_manager.run()
-            self.msleep(1000)
-
-            # 绑定结束信号
-            self.thread_card_manager.thread_dict[1].stop_signal.connect(self.cus_quit)
-            self.thread_card_manager.thread_dict[1].stop_signal.connect(self.thread_card_manager.stop)
-
-            # 绑定使用钥匙信号
-            for i in [1, 2]:
-                if i in self.thread_card_manager.thread_dict.keys():
-                    self.thread_card_manager.thread_dict[i].used_key_signal.connect(self.set_is_used_key_true)
-
-            CUS_LOGGER.debug('启动Todo中的事件循环, 用以战斗')
+            self.thread_card_manager.signal_stop.connect(self.exit)
+            self.thread_card_manager.start()
             self.exec()
 
             # 此处的重新变为None是为了让中止todo实例时时该属性仍存在
-            CUS_LOGGER.debug('销毁thread_card_manager的调用')
             self.thread_card_manager = None
+
             if self.opt["senior_settings"]["auto_senior_settings"]:
-                CUS_LOGGER.debug('销毁识图进程')
                 kill_process(self.process)
                 self.process = None
+
+            CUS_LOGGER.debug('thread_card_manager 退出事件循环并完成销毁线程')
 
             result_spend_time = time.time() - battle_start_time
 
@@ -994,7 +966,7 @@ class ThreadTodo(QThread):
                 # 发送到服务器
                 upload_result = loots_and_chests_data_post_to_sever(
                     detail_data=detail_data,
-                    url=g_extra.GLOBAL_EXTRA.misu_logistics)
+                    url=EXTRA.MISU_LOGISTICS)
                 if upload_result:
                     CUS_LOGGER.info(f"{title} [发送服务器] 成功发送一条数据到米苏物流!")
                 else:
@@ -1027,7 +999,7 @@ class ThreadTodo(QThread):
 
     def n_battle_customize_battle_error_print(self, success_battle_time):
         # 结束提示文本
-        self.signal_print_to_ui.emit(
+        SIGNAL.PRINT_TO_UI.emit(
             text=f"[单本轮战] 第{success_battle_time}次, 出现未知异常! 刷新后卡死, 以防止更多问题, 出现此问题可上报作者")
         self.batch_reload_game()
         sleep(60 * 60 * 24)
@@ -1067,16 +1039,16 @@ class ThreadTodo(QThread):
             检查人物等级和次数是否充足
             """
             if not faa_a.check_level():
-                self.signal_print_to_ui.emit(text=f"{title}{player_a}P等级不足, 跳过")
+                SIGNAL.PRINT_TO_UI.emit(text=f"{title}{player_a}P等级不足, 跳过")
                 return False
 
             if is_group:
                 if not faa_b.check_level():
-                    self.signal_print_to_ui.emit(text=f"{title}{player_b}P等级不足, 跳过")
+                    SIGNAL.PRINT_TO_UI.emit(text=f"{title}{player_b}P等级不足, 跳过")
                     return False
 
             if max_times < 1:
-                self.signal_print_to_ui.emit(text=f"{title}{stage_id} 设置次数不足 跳过")
+                SIGNAL.PRINT_TO_UI.emit(text=f"{title}{stage_id} 设置次数不足 跳过")
                 return False
 
             return True
@@ -1132,11 +1104,11 @@ class ThreadTodo(QThread):
                     # 进入异常, 跳过
                     need_goto_stage = True
                     # 结束提示文本
-                    self.signal_print_to_ui.emit(text=f"{title}第{battle_count}次, 创建房间多次异常, 重启跳过")
+                    SIGNAL.PRINT_TO_UI.emit(text=f"{title}第{battle_count}次, 创建房间多次异常, 重启跳过")
 
                     self.batch_reload_game()
 
-                self.signal_print_to_ui.emit(text=f"{title}第{battle_count + 1}次, 开始")
+                SIGNAL.PRINT_TO_UI.emit(text=f"{title}第{battle_count + 1}次, 开始")
 
                 # 开始战斗循环
                 result_id, result_drop, result_spend_time = self.battle(player_a=player_a, player_b=player_b)
@@ -1177,7 +1149,7 @@ class ThreadTodo(QThread):
                     })
 
                     # 时间
-                    self.signal_print_to_ui.emit(
+                    SIGNAL.PRINT_TO_UI.emit(
                         text="{}第{}次, {}, 正常结束, 耗时:{}分{}秒".format(
                             title,
                             battle_count,
@@ -1216,7 +1188,7 @@ class ThreadTodo(QThread):
                         need_goto_stage = True
 
                         # 结束提示文本
-                        self.signal_print_to_ui.emit(text=f"{title}第{battle_count + 1}次, 异常结束, 重启再来")
+                        SIGNAL.PRINT_TO_UI.emit(text=f"{title}第{battle_count + 1}次, 异常结束, 重启再来")
 
                         if not need_lock:
                             # 非单人多线程
@@ -1238,7 +1210,7 @@ class ThreadTodo(QThread):
                         need_goto_stage = True
 
                         # 结束提示文本
-                        self.signal_print_to_ui.emit(text=f"{title}第{battle_count}次, 开始游戏异常, 重启跳过")
+                        SIGNAL.PRINT_TO_UI.emit(text=f"{title}第{battle_count}次, 开始游戏异常, 重启跳过")
 
                         if not need_lock:
                             # 非单人多线程
@@ -1274,7 +1246,7 @@ class ThreadTodo(QThread):
                     count_used_key += 1
             average_time_spend = sum_time_spend / valid_total_count
 
-            self.signal_print_to_ui.emit(
+            SIGNAL.PRINT_TO_UI.emit(
                 text="正常场次:{}次 使用钥匙:{}次 总耗时:{}分{}秒  场均耗时:{}分{}秒".format(
                     valid_total_count,
                     count_used_key,
@@ -1291,7 +1263,7 @@ class ThreadTodo(QThread):
                 self.output_player_loot(player_id=2, result_list=result_list)
 
         def main():
-            self.signal_print_to_ui.emit(text=f"{title}{stage_id} {max_times}次 开始", color_level=5)
+            SIGNAL.PRINT_TO_UI.emit(text=f"{title}{stage_id} {max_times}次 开始", color_level=5)
 
             # 填入战斗方案和关卡信息, 之后会大量动作和更改类属性, 所以需要判断是否组队
             faa_a.set_config_for_battle(
@@ -1323,7 +1295,7 @@ class ThreadTodo(QThread):
             # 根据多次战斗结果组成的list 打印 1本n次 的汇总结果
             end_statistic_print(result_list=result_list)
 
-            self.signal_print_to_ui.emit(text=f"{title}{stage_id} {max_times}次 结束 ", color_level=5)
+            SIGNAL.PRINT_TO_UI.emit(text=f"{title}{stage_id} {max_times}次 结束 ", color_level=5)
 
         main()
 
@@ -1361,12 +1333,12 @@ class ThreadTodo(QThread):
 
         # 生成图片
         text = "[{}P] 战利品合计掉落, 识别有效场次:{}".format(player_id, sum(count_match_success_dict["loots"]))
-        self.signal_print_to_ui.emit(text=text, time=False)
-        self.signal_image_to_ui.emit(image=create_drops_image(count_dict=count_dict["loots"]))
+        SIGNAL.PRINT_TO_UI.emit(text=text, time=False)
+        SIGNAL.IMAGE_TO_UI.emit(image=create_drops_image(count_dict=count_dict["loots"]))
 
         text = "[{}P] 宝箱合计掉落, 识别有效场次:{}".format(player_id, sum(count_match_success_dict["chests"]))
-        self.signal_print_to_ui.emit(text=text, time=False)
-        self.signal_image_to_ui.emit(image=create_drops_image(count_dict=count_dict["chests"]))
+        SIGNAL.PRINT_TO_UI.emit(text=text, time=False)
+        SIGNAL.IMAGE_TO_UI.emit(image=create_drops_image(count_dict=count_dict["chests"]))
 
     def battle_1_n_n(self, quest_list, extra_title=None, need_lock=False):
         """
@@ -1382,10 +1354,10 @@ class ThreadTodo(QThread):
 
         if need_lock:
             # 上锁
-            self.signal_print_to_ui.emit(text=f"[双线程单人] {self.todo_id}P已开始任务! 进行自锁!", color_level=3)
+            SIGNAL.PRINT_TO_UI.emit(text=f"[双线程单人] {self.todo_id}P已开始任务! 进行自锁!", color_level=3)
             self.my_lock = True
 
-        self.signal_print_to_ui.emit(text=f"{title}开始...", color_level=3)
+        SIGNAL.PRINT_TO_UI.emit(text=f"{title}开始...", color_level=3)
 
         # 遍历完成每一个任务
         for i in range(len(quest_list)):
@@ -1394,7 +1366,7 @@ class ThreadTodo(QThread):
 
             # 判断显著错误的关卡名称
             if quest["stage_id"].split("-")[0] not in ["NO", "EX", "MT", "CS", "OR", "PT", "CU", "GD", "HH"]:
-                self.signal_print_to_ui.emit(
+                SIGNAL.PRINT_TO_UI.emit(
                     text="{}事项{},{},错误的关卡名称!跳过".format(
                         title,
                         quest["battle_id"] if "battle_id" in quest else (i + 1),
@@ -1404,7 +1376,7 @@ class ThreadTodo(QThread):
                 continue
 
             else:
-                self.signal_print_to_ui.emit(
+                SIGNAL.PRINT_TO_UI.emit(
                     text="{}事项{}, 开始,{},{},{}次,带卡:{},Ban卡:{}".format(
                         title,
                         quest["battle_id"] if "battle_id" in quest else (i + 1),
@@ -1432,7 +1404,7 @@ class ThreadTodo(QThread):
                     need_lock=need_lock
                 )
 
-                self.signal_print_to_ui.emit(
+                SIGNAL.PRINT_TO_UI.emit(
                     text="{}事项{}, 结束".format(
                         title,
                         quest["battle_id"] if "battle_id" in quest else (i + 1)
@@ -1440,10 +1412,10 @@ class ThreadTodo(QThread):
                     color_level=4
                 )
 
-        self.signal_print_to_ui.emit(text=f"{title}结束", color_level=3)
+        SIGNAL.PRINT_TO_UI.emit(text=f"{title}结束", color_level=3)
 
         if need_lock:
-            self.signal_print_to_ui.emit(
+            SIGNAL.PRINT_TO_UI.emit(
                 text=f"双线程单人功能中, {self.todo_id}P已完成所有任务! 已解锁另一线程!",
                 color_level=3
             )
@@ -1484,7 +1456,7 @@ class ThreadTodo(QThread):
 
         self.model_start_print(text=text_)
 
-        self.signal_print_to_ui.emit(text=f"[{text_}] 开始[多本轮战]...")
+        SIGNAL.PRINT_TO_UI.emit(text=f"[{text_}] 开始[多本轮战]...")
 
         quest_list = []
         for i in range(3):
@@ -1521,15 +1493,15 @@ class ThreadTodo(QThread):
         # 激活删除物品高危功能(可选) + 领取奖励一次
         if quest_mode == "公会任务":
             self.batch_level_2_action(title_text=title_text, dark_crystal=False)
-        self.signal_print_to_ui.emit(text=f"[{title_text}] 检查领取奖励...")
+        SIGNAL.PRINT_TO_UI.emit(text=f"[{title_text}] 检查领取奖励...")
         self.faa_dict[1].receive_quest_rewards(mode=quest_mode)
         self.faa_dict[2].receive_quest_rewards(mode=quest_mode)
 
         # 获取任务
-        self.signal_print_to_ui.emit(text=f"[{title_text}] 获取任务列表...")
+        SIGNAL.PRINT_TO_UI.emit(text=f"[{title_text}] 获取任务列表...")
         quest_list = self.faa_dict[1].match_quests(mode=quest_mode, qg_cs=stage)
         for i in quest_list:
-            self.signal_print_to_ui.emit(
+            SIGNAL.PRINT_TO_UI.emit(
                 text="副本:{},额外带卡:{}".format(
                     i["stage_id"],
                     i["quest_card"]))
@@ -1547,8 +1519,8 @@ class ThreadTodo(QThread):
             quests.append("普通任务")
             self.batch_level_2_action(title_text=title_text, dark_crystal=False)
 
-        self.signal_print_to_ui.emit(text=f"[{title_text}] 检查领取奖励中...")
-        self.batch_receive_all_quest_rewards(player=[1,2],quests=quests)
+        SIGNAL.PRINT_TO_UI.emit(text=f"[{title_text}] 检查领取奖励中...")
+        self.batch_receive_all_quest_rewards(player=[1, 2], quests=quests)
 
         self.model_end_print(text=title_text)
 
@@ -1556,7 +1528,7 @@ class ThreadTodo(QThread):
 
         self.model_start_print(text=text_)
 
-        self.signal_print_to_ui.emit(text=f"[{text_}] 开始[多本轮战]...")
+        SIGNAL.PRINT_TO_UI.emit(text=f"[{text_}] 开始[多本轮战]...")
 
         quest_list = []
         for i in range(3):
@@ -1624,7 +1596,7 @@ class ThreadTodo(QThread):
                 task_sequence_list[task_sequence_index]
             )
 
-            with g_extra.GLOBAL_EXTRA.file_lock:
+            with EXTRA.FILE_LOCK:
                 with open(file=task_sequence_path, mode="r", encoding="UTF-8") as file:
                     data = json.load(file)
 
@@ -1644,7 +1616,7 @@ class ThreadTodo(QThread):
             max_tid = max(max_tid, quest["task_id"])
 
         if task_begin_id > max_tid:
-            self.signal_print_to_ui.emit(text=f"[{text_}] 开始事项id > 该方案最高id! 将直接跳过!")
+            SIGNAL.PRINT_TO_UI.emit(text=f"[{text_}] 开始事项id > 该方案最高id! 将直接跳过!")
             return
 
         # 由于任务id从1开始, 故需要减1
@@ -1734,7 +1706,7 @@ class ThreadTodo(QThread):
             CUS_LOGGER.debug("[全自动大赛] 去Ban后任务列表如下:")
             CUS_LOGGER.debug(quest_list)
 
-            self.signal_print_to_ui.emit(
+            SIGNAL.PRINT_TO_UI.emit(
                 text="[全自动大赛] 已完成任务获取, 结果如下:",
                 color_level=3
             )
@@ -1746,7 +1718,7 @@ class ThreadTodo(QThread):
                 else:
                     player_text = "单人1P" if quest_list[i]["player"] == [1] else "单人2P"
 
-                self.signal_print_to_ui.emit(
+                SIGNAL.PRINT_TO_UI.emit(
                     text="[全自动大赛] 事项{},{},{},{},{}次,带卡:{},Ban卡:{}".format(
                         i + 1,
                         player_text,
@@ -1781,15 +1753,15 @@ class ThreadTodo(QThread):
             i = 0
             while True:
                 i += 1
-                self.signal_print_to_ui.emit(text=f"[{text_}] 第{i}次循环，开始", color_level=2)
+                SIGNAL.PRINT_TO_UI.emit(text=f"[{text_}] 第{i}次循环，开始", color_level=2)
 
                 round_result = a_round()
 
-                self.signal_print_to_ui.emit(text=f"[{text_}] 第{i}次循环，结束", color_level=2)
+                SIGNAL.PRINT_TO_UI.emit(text=f"[{text_}] 第{i}次循环，结束", color_level=2)
                 if not round_result:
                     break
 
-            self.signal_print_to_ui.emit(text=f"[{text_}] 所有被记录的任务已完成!", color_level=2)
+            SIGNAL.PRINT_TO_UI.emit(text=f"[{text_}] 所有被记录的任务已完成!", color_level=2)
 
             self.model_end_print(text=text_)
 
@@ -2071,15 +2043,14 @@ class ThreadTodo(QThread):
 
         start_time = datetime.datetime.now()
 
-        self.signal_print_to_ui.emit("每一个大类的任务开始前均会重启游戏以防止bug...")
+        SIGNAL.PRINT_TO_UI.emit("每一个大类的任务开始前均会重启游戏以防止bug...")
 
         self.remove_outdated_log_images()
 
         """主要事项"""
 
-        self.signal_print_to_ui.emit(
-            text=f"\n[主要事项] 开始!",
-            color_level=1)
+        SIGNAL.PRINT_TO_UI.emit(text="", time=False)
+        SIGNAL.PRINT_TO_UI.emit(text="[主要事项] 开始!", color_level=1)
 
         need_reload = False
         need_reload = need_reload or c_opt["sign_in"]["active"]
@@ -2280,7 +2251,7 @@ class ThreadTodo(QThread):
                 }
             )
 
-        self.signal_print_to_ui.emit(
+        SIGNAL.PRINT_TO_UI.emit(
             text=f"[主要事项] 全部完成! 耗时:{str(datetime.datetime.now() - start_time).split('.')[0]}",
             color_level=1)
 
@@ -2293,9 +2264,8 @@ class ThreadTodo(QThread):
         extra_active = extra_active or c_opt["loop_cross_server"]["active"]
 
         if extra_active:
-            self.signal_print_to_ui.emit(
-                text=f"\n[额外事项] 开始!",
-                color_level=1)
+            SIGNAL.PRINT_TO_UI.emit(text="", time=False)
+            SIGNAL.PRINT_TO_UI.emit(text=f"[额外事项] 开始!", color_level=1)
             self.batch_reload_game()
             start_time = datetime.datetime.now()
 
@@ -2326,11 +2296,11 @@ class ThreadTodo(QThread):
                 deck=c_opt["quest_guild"]["deck"])
 
         if extra_active:
-            self.signal_print_to_ui.emit(
+            SIGNAL.PRINT_TO_UI.emit(
                 text=f"[额外事项] 全部完成! 耗时:{str(datetime.datetime.now() - start_time).split('.')[0]}",
                 color_level=1)
         else:
-            self.signal_print_to_ui.emit(
+            SIGNAL.PRINT_TO_UI.emit(
                 text=f"[额外事项] 未启动.",
                 color_level=1)
 
@@ -2340,9 +2310,8 @@ class ThreadTodo(QThread):
         active_singleton = active_singleton or c_opt["customize_battle"]["active"]
 
         if active_singleton:
-            self.signal_print_to_ui.emit(
-                text=f"\n[自建房战斗] 开始! 如出现错误, 务必确保该功能是单独启动的!",
-                color_level=1)
+            SIGNAL.PRINT_TO_UI.emit(text="", time=False)
+            SIGNAL.PRINT_TO_UI.emit(text="[自建房战斗] 开始! 如出现错误, 务必确保该功能是单独启动的!", color_level=1)
             start_time = datetime.datetime.now()
 
         my_opt = c_opt["customize_battle"]
@@ -2364,7 +2333,7 @@ class ThreadTodo(QThread):
             )
 
         if active_singleton:
-            self.signal_print_to_ui.emit(
+            SIGNAL.PRINT_TO_UI.emit(
                 text=f"[自建房战斗] 全部完成! 耗时:{str(datetime.datetime.now() - start_time).split('.')[0]}",
                 color_level=1)
 
@@ -2372,12 +2341,12 @@ class ThreadTodo(QThread):
         if self.opt["advanced_settings"]["end_exit_game"]:
             self.batch_click_refresh_btn()
         else:
-            self.signal_print_to_ui.emit(
+            SIGNAL.PRINT_TO_UI.emit(
                 text="推荐勾选高级设置-完成后刷新游戏, 防止长期运行flash导致卡顿",
                 color_level=1)
 
         # 全部完成了发个信号
-        self.signal_todo_end.emit()
+        SIGNAL.END.emit()
 
     def run_2(self):
         """多线程作战时的第二线程, 负责2P"""

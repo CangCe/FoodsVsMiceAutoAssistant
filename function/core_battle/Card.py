@@ -5,9 +5,10 @@ import cv2
 import numpy as np
 
 from function.common.bg_img_screenshot import capture_image_png
-from function.globals import g_extra
+from function.globals import EXTRA
 from function.globals.g_resources import RESOURCE_P
 from function.globals.get_paths import PATHS
+from function.globals.location_card_cell_in_battle import COORDINATE_CARD_CELL_IN_BATTLE
 from function.globals.log import CUS_LOGGER
 from function.globals.thread_action_queue import T_ACTION_QUEUE_TIMER
 
@@ -77,8 +78,8 @@ class Card:
         self.faa_battle = self.faa.faa_battle
         self.player = self.faa.player
 
-        """从 FAA类 的 battle_plan_parsed 中读取的属性"""
-        plan = self.faa.battle_plan_parsed["card"]
+        """从 FAA类 的 battle_plan_card 中读取的属性"""
+        plan = self.faa.battle_plan_card
         plan_by_priority = plan[set_priority] if 0 <= set_priority < len(plan) else {}  # 处理默认值, 方便坤卡继承
 
         # 根据优先级（也是在战斗方案中的index）直接读取faa
@@ -112,7 +113,7 @@ class Card:
         self.click_sleep = self.faa_battle.click_sleep
 
         # 游戏最低帧间隔
-        self.frame_interval = 1 / g_extra.GLOBAL_EXTRA.lowest_fps
+        self.frame_interval = 1 / EXTRA.LOWEST_FPS
 
         # 状态
         self.status_cd = False  # 冷却完成 默认已完成
@@ -170,7 +171,7 @@ class Card:
                 self.coordinate_to.append(self.coordinate_to[0])
                 self.coordinate_to.remove(self.coordinate_to[0])
 
-        # 放完卡后强制自ban 2s 这游戏似乎没有cd更短的卡片了!
+        # 放完卡后强制自ban 1s 这游戏似乎没有cd更短的卡片了!
         self.status_ban = 1
 
     def get_card_current_img(self, game_image=None):
@@ -228,7 +229,7 @@ class Card:
                 if np.array_equal(state_image, current_img):
                     self.state_images["冷却"] = state_images_group["冷却.png"]
                     self.state_images["可用"] = state_images_group["可用.png"]
-                    if g_extra.GLOBAL_EXTRA.extra_log_battle:
+                    if EXTRA.EXTRA_LOG_BATTLE:
                         CUS_LOGGER.info(f"[战斗执行器] [{self.player}P] [{self.name}] 成功从已保存状态获取")
                     return 1
 
@@ -249,7 +250,7 @@ class Card:
             current_img_clicked = self.get_card_current_img()
             if np.array_equal(current_img, current_img_clicked):
                 # 如果什么都没有改变, 意味着该颜色是 不可用 无法试色
-                if g_extra.GLOBAL_EXTRA.extra_log_battle:
+                if EXTRA.EXTRA_LOG_BATTLE:
                     CUS_LOGGER.info(f"[战斗执行器] [{self.player}P] [{self.name}] 点击前后颜色相同, 试色失败")
                 return 0
 
@@ -267,17 +268,17 @@ class Card:
         current_img_after_put = self.get_card_current_img()
 
         if np.array_equal(current_img_after_put, current_img_clicked):
-            if g_extra.GLOBAL_EXTRA.extra_log_battle:
+            if EXTRA.EXTRA_LOG_BATTLE:
                 CUS_LOGGER.info(f"[战斗执行器] [{self.player}P] [{self.name}]  获取到的cd色和其他状态冲突, 试色失败")
             return 2
 
         if np.array_equal(current_img_after_put, current_img):
-            if g_extra.GLOBAL_EXTRA.extra_log_battle:
+            if EXTRA.EXTRA_LOG_BATTLE:
                 CUS_LOGGER.info(f"[战斗执行器] [{self.player}P] [{self.name}] 获取到的cd色和其他状态冲突, 试色失败")
             return 2
 
         self.state_images["冷却"] = current_img_after_put
-        if g_extra.GLOBAL_EXTRA.extra_log_battle:
+        if EXTRA.EXTRA_LOG_BATTLE:
             CUS_LOGGER.info(f"[战斗执行器] [{self.player}P] [{self.name}] 试色成功")
         return 2
 
@@ -299,16 +300,16 @@ class Card:
         if self.is_smoothie:
             if not self.faa_battle.fire_elemental_1000:
                 return
-            if g_extra.GLOBAL_EXTRA.smoothie_lock_time > 0:
+            if EXTRA.SMOOTHIE_LOCK_TIME > 0:
                 return
-            g_extra.GLOBAL_EXTRA.smoothie_lock_time = 7
+            EXTRA.SMOOTHIE_LOCK_TIME = 7
 
         # 线程放瓜皮时不巧撞上了正在计算炸弹类或者计算完成后炸弹需要该瓜皮
         if not self.can_use:
             return
 
         # 输出
-        # if g_extra.GLOBAL_EXTRA.extra_log_battle and self.faa.player == 1:
+        # if EXTRA.EXTRA_LOG_BATTLE and self.faa.player == 1:
         #     CUS_LOGGER.debug(f"[战斗执行器] [{self.player}P] 使用卡片：{self.name}")
 
         # 战斗放卡锁，用于防止与特殊放卡放置冲突，点击队列不连贯
@@ -343,9 +344,15 @@ class Card:
                 return
 
             # 坤-如果不可用状态 放弃本次用卡
+            kun_count = 0
             for kun_card in self.kun_cards:
+
                 if not kun_card.status_usable:
                     continue
+
+                # 防止多坤撞车
+                if kun_count >= 1:
+                    time.sleep(0.5)
 
                 # 坤-点击 选中卡片
                 kun_card.choice_card()
@@ -359,6 +366,8 @@ class Card:
 
                 kun_card.fresh_status()
 
+                kun_count += 1
+
     def destroy(self):
         """中止运行时释放内存, 顺带如果遇到了全新的状态图片保存一下"""
         self.faa = None
@@ -371,7 +380,7 @@ class Card:
         if (self.state_images["不可用"] is not None) and (self.state_images["冷却"] is not None):
 
             # 使用读写全局锁 避免冲突
-            with g_extra.GLOBAL_EXTRA.file_lock:
+            with EXTRA.FILE_LOCK:
 
                 for _, new_state_image in self.state_images.items():
 
@@ -420,9 +429,23 @@ class CardKun(Card):
     def put_card(self):
         """
         坤卡没有使用卡片函数, 仅依附于其他卡片进行使用
+        但在罕见情况下 坤类卡片需要重新获取状态, 所以需要强行为其进行一场全屏遍历.
         :return:
         """
-        pass
+        for _, coordinate in COORDINATE_CARD_CELL_IN_BATTLE.items():
+            # 点击 放下卡片
+            T_ACTION_QUEUE_TIMER.add_click_to_queue(
+                handle=self.handle,
+                x=coordinate[0],
+                y=coordinate[1])
+            time.sleep(self.click_sleep)
+
+        # 放卡后点一下空白
+        T_ACTION_QUEUE_TIMER.add_move_to_queue(handle=self.handle, x=295, y=485)  # 曾 200, 350
+        time.sleep(self.click_sleep)
+
+        T_ACTION_QUEUE_TIMER.add_click_to_queue(handle=self.handle, x=295, y=485)
+        time.sleep(self.click_sleep)
 
 
 class SpecialCard(Card):
@@ -451,14 +474,14 @@ class SpecialCard(Card):
         # 卡片自身的location 是空的 保存到模板
         # 卡片放置的位置 - 代号 list["1-1",...]
         self.location = []
-        self.location_template = self.faa.battle_plan_parsed["card"][self.set_priority]["location"]
+        self.location_template = self.faa.battle_plan_card[self.set_priority]["location"]
 
         # 卡片放置的位置 - 坐标 list[[x,y],....]
         self.coordinate_to = []
-        self.coordinate_to_template = self.faa.battle_plan_parsed["card"][self.set_priority]["coordinate_to"]
+        self.coordinate_to_template = self.faa.battle_plan_card[self.set_priority]["coordinate_to"]
 
         # 卡片拿取的位置 - 坐标 list[x,y]
-        self.coordinate_from = self.faa.battle_plan_parsed["card"][self.set_priority]["coordinate_from"]
+        self.coordinate_from = self.faa.battle_plan_card[self.set_priority]["coordinate_from"]
 
     def try_get_img_for_check_card_states_choice_card(self):
         """预留接口, 让高级放卡可以仅覆写这一小部分"""
@@ -473,7 +496,7 @@ class SpecialCard(Card):
     def use_mat_card(self):
 
         # 加一个垫子的判断 点位要放承载卡
-        if self.location[0] in self.faa.battle_plan_parsed["mat"]:
+        if self.location[0] in self.faa.stage_info["mat_cell"]:
 
             for mat in self.faa.mat_cards_info:
                 T_ACTION_QUEUE_TIMER.add_click_to_queue(

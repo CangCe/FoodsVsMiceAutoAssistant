@@ -12,7 +12,7 @@ from function.core.FAA_ActionQuestReceiveRewards import FAAActionQuestReceiveRew
 from function.core.FAA_BattleARoundPreparation import BattleARoundPreparation
 from function.core_battle.FAA_Battle import Battle
 from function.core_battle.get_location_in_battle import get_location_card_deck_in_battle
-from function.globals import g_resources
+from function.globals import g_resources, SIGNAL
 from function.globals.g_resources import RESOURCE_P
 from function.globals.location_card_cell_in_battle import COORDINATE_CARD_CELL_IN_BATTLE
 from function.globals.log import CUS_LOGGER
@@ -31,22 +31,13 @@ class FAA:
     """
 
     def __init__(self, channel="锑食", player=1,
-                 character_level=1, is_auto_battle=True, is_auto_pickup=False, random_seed=0,
-                 signal_dict=None):
+                 character_level=1, is_auto_battle=True, is_auto_pickup=False, random_seed=0):
 
         # 获取窗口句柄
         self.channel = channel  # 在刷新窗口后会需要再重新获取flash的句柄, 故保留
         self.handle = faa_get_handle(channel=self.channel, mode="flash")
         self.handle_browser = faa_get_handle(channel=self.channel, mode="browser")
         self.handle_360 = faa_get_handle(channel=self.channel, mode="360")
-
-        # 外部信号集 用于根据窗口逻辑, 控制UI和整体的Todo类, 做出相应改变
-        self.signal_dict = signal_dict
-        # 为了单例调试可用
-        if self.signal_dict:
-            self.signal_print_to_ui = self.signal_dict["print_to_ui"]
-            self.signal_dialog = self.signal_dict["dialog"]
-            self.signal_todo_end = self.signal_dict["end"]
 
         # 随机种子
         self.random_seed = random_seed
@@ -72,7 +63,7 @@ class FAA:
         self.deck = None
         self.quest_card = None
         self.ban_card_list = None
-        self.battle_plan_0 = None  # 读取自json的初始战斗方案
+        self.battle_plan = None  # 读取自json的初始战斗方案
         self.battle_mode = None
 
         # 初始化战斗中 卡片位置 字典 bp -> battle location
@@ -86,8 +77,8 @@ class FAA:
         self.smoothie_info = None  # dict {}
         self.kun_cards_info = None  # list [{},{}...] 也用于标记本场战斗是否需要激活坤函数
 
-        # 经过处理后的战斗方案, 由战斗类相关动作函数直接调用, 其中的各种操作都包含坐标
-        self.battle_plan_parsed = {}
+        # 经过处理后的战斗方案卡片部分, 由战斗类相关动作函数直接调用, 其中的各种操作都包含坐标
+        self.battle_plan_card = []
 
         """被拆分为子实例的模块"""
 
@@ -107,21 +98,25 @@ class FAA:
         self.battle_lock = threading.Lock()
 
     def print_debug(self, text, player=None):
+        """FAA类中的 log debug 包含了player信息"""
         if not player:
             player = self.player
         CUS_LOGGER.debug("[{}P] {}".format(player, text))
 
     def print_info(self, text, player=None):
+        """FAA类中的 log print 包含了player信息"""
         if not player:
             player = self.player
         CUS_LOGGER.info("[{}P] {}".format(player, text))
 
     def print_warning(self, text, player=None):
+        """FAA类中的 log warning 包含了player信息"""
         if not player:
             player = self.player
         CUS_LOGGER.warning("[{}P] {}".format(player, text))
 
     def print_error(self, text, player=None):
+        """FAA类中的 log error 包含了player信息"""
         if not player:
             player = self.player
         CUS_LOGGER.error("[{}P] {}".format(player, text))
@@ -144,7 +139,14 @@ class FAA:
         return self.object_action_interface_jump.goto_map(map_id=map_id)
 
     def action_goto_stage(self, mt_first_time: bool = False):
-        return self.object_action_interface_jump.goto_stage(mt_first_time=mt_first_time)
+        try:
+            return self.object_action_interface_jump.goto_stage(mt_first_time=mt_first_time)
+        except Exception as e:
+            SIGNAL.PRINT_TO_UI.emit(text="跳转关卡失败，请检查关卡代号是否正确",color_level=1)
+            SIGNAL.DIALOG.emit("ERROR", "跳转关卡失败! 请检查关卡代号是否正确")
+            SIGNAL.END.emit()
+
+
 
     """"对flash游戏界面或自身参数的最基础 [检测]"""
 
@@ -223,12 +225,14 @@ class FAA:
         # 双倍ban承载 ban软糖
         if "木盘子" in self.ban_card_list:
             self.ban_card_list.append("魔法软糖")
+
         if "麦芽糖" in self.ban_card_list:
             self.ban_card_list.append("魔法软糖")
+
         if "苏打气泡" in self.ban_card_list:
             self.ban_card_list.append("魔法软糖")
 
-        self.battle_plan_0 = g_resources.RESOURCE_B[battle_plan_uuid]
+        self.battle_plan = g_resources.RESOURCE_B[battle_plan_uuid]
 
         self.stage_info = read_json_to_stage_info(stage_id)
 
@@ -393,7 +397,7 @@ class FAA:
 
         self.print_info(text="战斗中识图查找幻幻鸡位置, 结果：{}".format(self.kun_cards_info))
 
-    def init_battle_plan_parsed(self) -> None:
+    def init_battle_plan_card(self) -> None:
         """
         战斗方案解析器 - 用于根据战斗方案的json和关卡等多种信息, 解析计算为卡片的部署方案 供战斗方案执行器执行
         Return:卡片的部署方案字典
@@ -423,17 +427,25 @@ class FAA:
         quest_card = copy.deepcopy(self.quest_card)
         ban_card_list = copy.deepcopy(self.ban_card_list)
         stage_info = copy.deepcopy(self.stage_info)
-        battle_plan = copy.deepcopy(self.battle_plan_0)
+        battle_plan = copy.deepcopy(self.battle_plan)
         mat_card_info = copy.deepcopy(self.mat_cards_info)
         smoothie_info = copy.deepcopy(self.smoothie_info)
+
+        """当前波次选择"""
+        if self.faa_battle.wave != 0:
+            battle_plan = battle_plan["card"]["wave"][str(self.faa_battle.wave)]
+        else:
+            battle_plan = battle_plan["card"]["default"]
 
         def calculation_card_quest(list_cell_all):
             """计算步骤一 加入任务卡的摆放坐标"""
 
             if quest_card != "None":
 
-                # 任务卡 位置
-                quest_card_locations = ["6-1", "6-2", "6-3", "6-4", "6-5", "6-6", "6-7"]
+                quest_card_locations = [
+                    "6-1", "6-2", "6-3", "6-4", "6-5", "6-6", "6-7",
+                    "7-1", "7-2", "7-3", "7-4", "7-5", "7-6", "7-7"
+                ]
 
                 # 遍历删除 方案的放卡中 占用了任务卡摆放的棋盘位置
                 list_cell_all = [
@@ -446,6 +458,18 @@ class FAA:
                     quest_card_id = max(card["id"] for card in list_cell_all) + 1
                 else:
                     quest_card_id = 1
+
+                # 任务卡 位置 组队情况下分摊
+                if not is_group:
+                    quest_card_locations = [
+                        "6-1", "6-2", "6-3", "6-4", "6-5", "6-6", "6-7",
+                        "7-1", "7-2", "7-3", "7-4", "7-5", "7-6", "7-7"
+                    ]
+                else:
+                    if self.player == 1:
+                        quest_card_locations = ["6-1", "6-2", "6-3", "6-4", "6-5", "6-6", "6-7"]
+                    else:
+                        quest_card_locations = ["7-1", "7-2", "7-3", "7-4", "7-5", "7-6", "7-7"]
 
                 # 设定任务卡dict
                 dict_quest = {
@@ -579,33 +603,9 @@ class FAA:
 
             return new_list
 
-        def calculation_shovel():
-            """铲子位置 """
-            list_shovel = stage_info["shovel"]
-            return list_shovel
-
-        def transform_code_to_coordinate(list_cell_all, list_shovel):
-            """
-            如果没有后者
-            将 id:int 变为 coordinate_from:[x:int,y:int]
-            将 location:str 变为 coordinate_to:[[x:int,y:int],...]"""
-
-            for card in list_cell_all:
-                # 根据字段值, 判断是否完成写入, 并进行转换
-                card["coordinate_from"] = copy.deepcopy(bp_card[card["id"]])
-                card["coordinate_to"] = [copy.deepcopy(bp_cell[location]) for location in card["location"]]
-
-            list_shovel = copy.deepcopy([bp_cell[location] for location in list_shovel])
-
-            # 为幻鸡单独转化
-            for kun_card_info in self.kun_cards_info:
-                kun_card_info["coordinate_from"] = copy.deepcopy(bp_card[kun_card_info["id"]])
-
-            return list_cell_all, list_shovel
-
         def main():
             # 初始化数组 + 复制一份全新的 battle_plan
-            list_cell_all = battle_plan["card"]
+            list_cell_all = battle_plan
 
             # 调用计算任务卡
             list_cell_all = calculation_card_quest(list_cell_all=list_cell_all)
@@ -622,23 +622,23 @@ class FAA:
             # 调用去掉障碍位置
             list_cell_all = calculation_obstacle(list_cell_all=list_cell_all)
 
-            # 调用计算铲子卡
-            list_shovel = calculation_shovel()
-
             # 统一以坐标直接表示位置, 防止重复计算 (添加coordinate_from, coordinate_to)
-            list_cell_all, list_shovel = transform_code_to_coordinate(
-                list_cell_all=list_cell_all,
-                list_shovel=list_shovel)
+            # 将 id:int 变为 coordinate_from:[x:int,y:int]
+            # 将 location:str 变为 coordinate_to:[[x:int,y:int],...]
+            for card in list_cell_all:
+                # 根据字段值, 判断是否完成写入, 并进行转换
+                card["coordinate_from"] = copy.deepcopy(bp_card[card["id"]])
+                card["coordinate_to"] = [copy.deepcopy(bp_cell[location]) for location in card["location"]]
+
+            # 为幻鸡单独转化
+            for kun_card_info in self.kun_cards_info:
+                kun_card_info["coordinate_from"] = copy.deepcopy(bp_card[kun_card_info["id"]])
 
             # 不常用调试print
             self.print_debug(text="你的战斗放卡opt如下:")
             self.print_debug(text=list_cell_all)
 
-            self.battle_plan_parsed = {
-                "card": list_cell_all,
-                "shovel": list_shovel,
-                "obstacle": stage_info["obstacle"],
-                "mat": stage_info["mat_cell"]}
+            self.battle_plan_card = list_cell_all
 
         return main()
 
@@ -664,7 +664,7 @@ class FAA:
         time.sleep(0.333)
         if not self.is_main:
             time.sleep(0.666)
-
+        self.faa_battle.init_battle_plan_player(locations=self.battle_plan["player"])
         self.faa_battle.use_player_all()
 
         # 2.识图卡片数量，确定卡片在deck中的位置
@@ -675,10 +675,11 @@ class FAA:
         self.init_smoothie_card_info()
         self.init_kun_card_info()
 
-        # 4.计算所有坐标
-        self.init_battle_plan_parsed()
+        # 4.计算所有卡片放置坐标
+        self.init_battle_plan_card()
 
         # 5.铲卡
+        self.faa_battle.init_battle_plan_shovel(locations=self.stage_info["shovel"])
         if self.is_main:
             self.faa_battle.use_shovel_all()  # 因为有点击序列，所以同时操作是可行的
 
@@ -1126,7 +1127,6 @@ class FAA:
                         match_failed_check=3,
                         after_sleep=1,
                         click=True)
-                    self.random_seed += 1
 
                     self.print_debug(text="[刷新游戏] 已完成")
                     time.sleep(0.5)
@@ -1528,8 +1528,8 @@ class FAA:
         else:
             return "你游币用完了! 氪不了一点 orz"
 
-    def fed_and_watered(self) -> None:
-        """公会施肥浇水功能"""
+    def fed_and_watered(self,try_times=0) -> None:
+        """公会施肥浇水功能，默认尝试次数0, 即从第一个公会开始"""
 
         def goto_guild_and_in_guild():
             """
@@ -1621,9 +1621,9 @@ class FAA:
             # 次数限制内失败 进入施肥界面
             return False
 
-        def switch_guild_garden_by_try_times(try_time):
+        def switch_guild_garden_by_try_times(try_times):
             """根据目前尝试次数, 到达不同的公会"""
-            if try_time != 0:
+            if try_times != 0:
 
                 # 点击全部工会
                 T_ACTION_QUEUE_TIMER.add_click_to_queue(handle=self.handle, x=798, y=123)
@@ -1634,7 +1634,7 @@ class FAA:
                 time.sleep(1)
 
                 # 以倒数第二页从上到下为1-4, 第二页为5-8次尝试对应的公会 以此类推
-                for i in range((try_time - 1) // 4 + 1):
+                for i in range((try_times - 1) // 4 + 1):
                     # 向上翻的页数
                     T_ACTION_QUEUE_TIMER.add_click_to_queue(handle=self.handle, x=843, y=194)
                     time.sleep(1)
@@ -1644,10 +1644,10 @@ class FAA:
                 T_ACTION_QUEUE_TIMER.add_click_to_queue(
                     handle=self.handle,
                     x=810,
-                    y=my_dict[(try_time - 1) % 4 + 1])
+                    y=my_dict[(try_times - 1) % 4 + 1])
                 time.sleep(1)
 
-        def do_something_and_exit(try_time):
+        def do_something_and_exit(try_times):
             """完成素质三连并退出公会花园界面"""
             # 采摘一次
             T_ACTION_QUEUE_TIMER.add_click_to_queue(handle=self.handle, x=785, y=471)
@@ -1668,7 +1668,7 @@ class FAA:
                 after_sleep=1,
                 click=False
             )
-            self.print_debug(text=f"{try_time + 1}/100 次尝试, 浇水后, 已确认无任务完成黑屏")
+            self.print_debug(text=f"{try_times + 1}/100 次尝试, 浇水后, 已确认无任务完成黑屏")
 
             # 施肥一次
             T_ACTION_QUEUE_TIMER.add_click_to_queue(handle=self.handle, x=785, y=418)
@@ -1684,9 +1684,9 @@ class FAA:
                 match_failed_check=7,
                 after_sleep=2,
                 click=False)
-            self.print_debug(text=f"{try_time + 1}/100 次尝试, 施肥后, 已确认无任务完成黑屏")
+            self.print_debug(text=f"{try_times + 1}/100 次尝试, 施肥后, 已确认无任务完成黑屏")
 
-        def fed_and_watered_one_action(try_time):
+        def fed_and_watered_one_action(try_times):
             """
             :return: bool is completed  , bool is bugged
             """
@@ -1725,7 +1725,7 @@ class FAA:
             time.sleep(0.5)
 
             if not find:
-                self.print_debug(text="已完成公会浇水施肥, 尝试次数: {}/100".format(try_time))
+                self.print_debug(text="已完成公会浇水施肥, 尝试次数: {}/100".format(try_times))
                 return True, False
             else:
                 # 进入施肥界面, 正确进入就跳出循环
@@ -1733,37 +1733,36 @@ class FAA:
                     return False, True
 
                 # 根据目前尝试次数, 到达不同的公会
-                switch_guild_garden_by_try_times(try_time=try_time)
+                switch_guild_garden_by_try_times(try_times=try_times)
 
                 # 完成素质三连并退出公会花园界面
-                do_something_and_exit(try_time=try_time)
+                do_something_and_exit(try_times=try_times)
 
                 if exit_to_guild_page_and_in_guild():
                     return False, True
 
                 return False, False
 
-        def fed_and_watered_multi_action():
+        def fed_and_watered_multi_action(try_times):
             """
             :return: 完成的尝试次数, 是否是bug
             """
             # 循环到任务完成
-            try_time = 0
             while True:
 
-                completed_flag, is_bug = fed_and_watered_one_action(try_time)
-                try_time += 1
+                completed_flag, is_bug = fed_and_watered_one_action(try_times=try_times)
+                try_times += 1
 
-                if try_time == 100 or is_bug:
+                if try_times == 100 or is_bug:
                     # 次数过多, 或 遇上bug
-                    return completed_flag, try_time, True
+                    return completed_flag, try_times, True
 
                 if completed_flag:
-                    return completed_flag, try_time, False
+                    return completed_flag, try_times, False
 
-        def fed_and_watered_main():
+        def fed_and_watered_main(try_times):
 
-            self.signal_print_to_ui.emit(f"[浇水 施肥 摘果 领取] [{self.player}p] 开始执行...")
+            SIGNAL.PRINT_TO_UI.emit(f"[浇水 施肥 摘果 领取] [{self.player}p] 开始执行...")
             self.print_debug(text="开始公会浇水施肥")
 
             for reload_time in range(1, 4):
@@ -1772,58 +1771,60 @@ class FAA:
                 is_bug = goto_guild_and_in_guild()
                 if is_bug:
                     if reload_time != 3:
-                        self.signal_print_to_ui.emit(
+                        SIGNAL.PRINT_TO_UI.emit(
                             f"[浇水 施肥 摘果 领取] [{self.player}p] 锑食卡住了! 进入工会页失败... 刷新再试({reload_time}/3)")
                         self.reload_game()
                         continue
                     else:
-                        self.signal_print_to_ui.emit(
+                        SIGNAL.PRINT_TO_UI.emit(
                             f"[浇水 施肥 摘果 领取] [{self.player}p] 锑食卡住了! 进入工会页失败... 刷新跳过({reload_time}/3)")
                         self.reload_game()
                         break
 
                 # 循环到任务完成或出现bug或超次数
-                completed, try_time, is_bug = fed_and_watered_multi_action()
+                completed, try_times, is_bug = fed_and_watered_multi_action(try_times=try_times)
 
                 if is_bug:
                     if reload_time != 3:
-                        self.signal_print_to_ui.emit(
+                        SIGNAL.PRINT_TO_UI.emit(
                             f"[浇水 施肥 摘果 领取] [{self.player}p] 锑食卡住 "
-                            f"本轮循环施肥尝试:{try_time}次 刷新再试({reload_time}/3)")
+                            f"本轮循环施肥尝试:{try_times}次 刷新再试({reload_time}/3)")
                         self.reload_game()
                         continue
                     else:
-                        self.signal_print_to_ui.emit(
+                        SIGNAL.PRINT_TO_UI.emit(
                             f"[浇水 施肥 摘果 领取] [{self.player}p] 锑食卡住 "
-                            f"本轮循环施肥尝试:{try_time}次  刷新跳过({reload_time}/3)")
+                            f"本轮循环施肥尝试:{try_times}次  刷新跳过({reload_time}/3)")
                         self.reload_game()
                         break
 
-                if try_time == 100:
-                    self.signal_print_to_ui.emit(
+                if try_times == 100:
+                    SIGNAL.PRINT_TO_UI.emit(
                         f"[浇水 施肥 摘果 领取] [{self.player}p] 尝试100次, 直接刷新跳过")
                     self.reload_game()
                     break
 
                 if completed:
                     # 正常完成
-                    self.signal_print_to_ui.emit(
+                    SIGNAL.PRINT_TO_UI.emit(
                         f"[浇水 施肥 摘果 领取] [{self.player}p] 正确完成 ~")
                     # 退出工会
                     self.action_exit(mode="普通红叉")
                     self.receive_quest_rewards(mode="公会任务")
                     break
 
-        fed_and_watered_main()
+            return try_times
+
+        return fed_and_watered_main(try_times=try_times)
 
     def use_items_consumables(self) -> None:
 
-        self.signal_print_to_ui.emit(text=f"[使用绑定消耗品] [{self.player}P] 开始.")
+        SIGNAL.PRINT_TO_UI.emit(text=f"[使用绑定消耗品] [{self.player}P] 开始.")
 
         # 打开背包
         self.print_debug(text="打开背包")
         self.action_bottom_menu(mode="背包")
-        self.signal_print_to_ui.emit(text=f"[使用绑定消耗品] [{self.player}P] 背包图标可能需要加载, 等待3s")
+        SIGNAL.PRINT_TO_UI.emit(text=f"[使用绑定消耗品] [{self.player}P] 背包图标可能需要加载, 等待3s")
         time.sleep(3)
 
         # 8次查找 7次下拉 查找所有正确图标 不需要升到最顶, 打开背包会自动重置
@@ -1939,7 +1940,7 @@ class FAA:
         # 关闭背包
         self.action_exit(mode="普通红叉")
 
-        self.signal_print_to_ui.emit(text=f"[使用绑定消耗品] [{self.player}P] 结束.")
+        SIGNAL.PRINT_TO_UI.emit(text=f"[使用绑定消耗品] [{self.player}P] 结束.")
 
     def use_items_double_card(self, max_times) -> None:
         """
@@ -2038,14 +2039,14 @@ class FAA:
             self.print_debug(text="[使用双暴卡] 开始")
 
             if is_saturday_or_sunday():
-                self.signal_print_to_ui.emit(text="[使用双暴卡] 今天是星期六 / 星期日, 跳过")
+                SIGNAL.PRINT_TO_UI.emit(text="[使用双暴卡] 今天是星期六 / 星期日, 跳过")
                 return
 
             # 打开背包
             self.print_debug(text="打开背包")
             self.action_bottom_menu(mode="背包")
             if self.player == 1:
-                self.signal_print_to_ui.emit(text=f"[使用双暴卡] [{self.player}P] 背包图标可能需要加载, 等待3s")
+                SIGNAL.PRINT_TO_UI.emit(text=f"[使用双暴卡] [{self.player}P] 背包图标可能需要加载, 等待3s")
             time.sleep(3)
 
             loop_use_double_card()
@@ -2060,12 +2061,12 @@ class FAA:
         输入二级密码. 通过背包内尝试拆主武器
         """
 
-        #self.signal_print_to_ui.emit(text=f"[输入二级密码] [{self.player}P] 开始.")
+        #SIGNAL.PRINT_TO_UI.emit(text=f"[输入二级密码] [{self.player}P] 开始.")
 #
         ## 打开背包
         #self.action_bottom_menu(mode="背包")
-        #self.signal_print_to_ui.emit(text=f"[输入二级密码] [{self.player}P] 背包图标可能需要加载, 等待3s")
-        #time.sleep(3)
+        #SIGNAL.PRINT_TO_UI.emit(text=f"[输入二级密码] [{self.player}P] 背包图标可能需要加载, 等待10s")
+        #time.sleep(10)
 #
         ## 卸下主武器
         #T_ACTION_QUEUE_TIMER.add_click_to_queue(handle=self.handle, x=210, y=445)
@@ -2088,7 +2089,7 @@ class FAA:
         ## 关闭背包
         #self.action_exit(mode="普通红叉")
 #
-        #self.signal_print_to_ui.emit(text=f"[输入二级密码] [{self.player}P] 结束.")
+        #SIGNAL.PRINT_TO_UI.emit(text=f"[输入二级密码] [{self.player}P] 结束.")
 
     def gift_flower(self):
         """送免费花"""
@@ -2129,7 +2130,7 @@ class FAA:
         自动兑换暗晶的函数
         """
 
-        self.signal_print_to_ui.emit(text=f"[兑换暗晶] [{self.player}P] 开始.")
+        SIGNAL.PRINT_TO_UI.emit(text=f"[兑换暗晶] [{self.player}P] 开始.")
 
         # 打开公会副本界面
         self.print_debug(text="跳转到工会副本界面")
@@ -2154,7 +2155,7 @@ class FAA:
         for i in range(2):
             self.action_exit(mode="普通红叉")
 
-        self.signal_print_to_ui.emit(text=f"[兑换暗晶] [{self.player}P] 结束.")
+        SIGNAL.PRINT_TO_UI.emit(text=f"[兑换暗晶] [{self.player}P] 结束.")
 
     def delete_items(self):
         """用于删除多余的技能书类消耗品, 使用前需要输入二级或无二级密码"""
@@ -2164,14 +2165,14 @@ class FAA:
         # 打开背包
         self.print_debug(text="打开背包")
         self.action_bottom_menu(mode="背包")
-        self.signal_print_to_ui.emit(text=f"[删除物品] [{self.player}P] 背包图标可能需要加载, 等待3s")
+        SIGNAL.PRINT_TO_UI.emit(text=f"[删除物品] [{self.player}P] 背包图标可能需要加载, 等待3s")
         time.sleep(3)
 
         # 点击到物品栏目
         T_ACTION_QUEUE_TIMER.add_click_to_queue(handle=self.handle, x=777, y=65)
         time.sleep(1)
 
-        self.signal_print_to_ui.emit(text=f"[删除物品] [{self.player}P] 背包图标可能需要加载, 等待3s")
+        SIGNAL.PRINT_TO_UI.emit(text=f"[删除物品] [{self.player}P] 背包图标可能需要加载, 等待3s")
         time.sleep(3)
 
         # 点击整理物品按钮

@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QHBoxLayout, QTextEdit, QListWidget, QMessageBox, QSpinBox, QListWidgetItem, QFrame, QAbstractItemView,
     QSpacerItem, QSizePolicy)
 
-from function.globals import g_extra
+from function.globals import EXTRA
 from function.globals.get_paths import PATHS
 from function.globals.log import CUS_LOGGER
 from function.widget.MultiLevelMenu import MultiLevelMenu
@@ -36,12 +36,19 @@ class QMWEditorOfBattlePlan(QMainWindow):
         with open(file=PATHS["config"] + "//stage_info.json", mode="r", encoding="UTF-8") as file:
             self.stage_info = json.load(file)
 
+        # 当前子方案, 例如 默认 波次变阵方案 两个参数确定
+        self.sub_plan_index = ("default", None)
+        self.sub_plan = []
+
         """内部数据表"""
         # 数据dict
         self.json_data = {
             "tips": "",
             "player": [],
-            "card": []
+            "card": {
+                "default": [],
+                "wave": {}
+            }
         }
 
         # 当前被选中正在编辑的项目的index
@@ -78,7 +85,9 @@ class QMWEditorOfBattlePlan(QMainWindow):
 
         self.WidgetWaveChoose = QComboBox()
         LayWave.addWidget(self.WidgetWaveChoose)
-        self.WidgetWaveChoose.addItems([str(i) for i in range(1, 26)])
+        self.WidgetWaveChoose.addItems([str(i) for i in range(0, 14)])
+        # 绑定信号 当其更改 则刷新
+        self.WidgetWaveChoose.currentTextChanged.connect(self.change_wave)
 
         label = QLabel("\u3000\u3000\u3000\u3000")
         LayWave.addWidget(label)
@@ -289,6 +298,20 @@ class QMWEditorOfBattlePlan(QMainWindow):
         # 禁用部分输入控件
         self.input_widget_enabled(mode=False)
 
+    def get_current_sub_plan_cards(self):
+
+        if self.sub_plan_index[0] == "default":
+            self.sub_plan = self.json_data["card"]["default"]
+
+        if self.sub_plan_index[0] == "wave":
+            wave_data = self.json_data["card"]["wave"]
+            plan = wave_data.get(self.sub_plan_index[1])
+            if plan is None:
+                # 如果缺失 深拷贝
+                wave_data[self.sub_plan_index[1]] = copy.deepcopy(self.json_data["card"]["default"])
+                plan = wave_data.get(self.sub_plan_index[1])
+            self.sub_plan = plan
+
     def highlight_chessboard(self, card_locations):
         """根据卡片的位置list，将对应元素的按钮进行高亮"""
         # 清除所有按钮的高亮
@@ -313,6 +336,9 @@ class QMWEditorOfBattlePlan(QMainWindow):
         self.setWindowIcon(QIcon(PATHS["logo"] + "\\圆角-FetTuo-192x.png"))
 
     def input_widget_lock(self, mode: bool):
+        """
+        是否锁定卡片属性输入控件
+        """
         self.WidgetIdInput.blockSignals(mode)
         self.WidgetNameInput.blockSignals(mode)
         self.WidgetErgodicInput.blockSignals(mode)
@@ -337,21 +363,20 @@ class QMWEditorOfBattlePlan(QMainWindow):
         self.input_widget_lock(True)
 
         if self.index == 0:
-            # 玩家 直接清空它们
-            # self.WCurrentCard.setText("玩家")
+            # 玩家
             self.WidgetIdInput.clear()
-            self.WidgetNameInput.clear()
             self.WidgetNameInput.setText("玩家")
             self.WidgetErgodicInput.setCurrentIndex(0)
             self.WidgetQueueInput.setCurrentIndex(0)
-            self.WidgetKunInput.setValue(0)
+            self.WidgetKunInput.clear()
             self.highlight_chessboard(self.json_data["player"])
             # 禁用部分输入控件
             self.input_widget_enabled(mode=False)
+
         else:
             # 卡片
             index = self.index - 1  # 可能需要深拷贝？也许是被保护的特性 不需要
-            card = self.json_data["card"][index]
+            card = self.sub_plan[index]
             # self.WCurrentCard.setText("索引-{} 名称-{}".format(index, card["name"]))
             self.WidgetIdInput.setValue((card['id']))
             self.WidgetNameInput.setText(card['name'])
@@ -374,7 +399,7 @@ class QMWEditorOfBattlePlan(QMainWindow):
         player_item = QListWidgetItem("玩家")
         self.WidgetCardList.addItem(player_item)
 
-        if not self.json_data["card"]:
+        if not self.sub_plan:
             return
 
         def calculate_width(text):
@@ -395,17 +420,17 @@ class QMWEditorOfBattlePlan(QMainWindow):
         # 根据中文和西文分别记录最高宽度
         name_max_width_c = 0
         name_max_width_e = 0
-        for card in self.json_data["card"]:
+        for card in self.sub_plan:
             width_c, width_e = calculate_width(card["name"])
             name_max_width_c = max(name_max_width_c, width_c)
             name_max_width_e = max(name_max_width_e, width_e)
 
         # 找到最长的id长度
         max_id_length = 1
-        if self.json_data["card"]:
-            max_id_length = max(len(str(card["id"])) for card in self.json_data["card"])
+        if self.sub_plan:
+            max_id_length = max(len(str(card["id"])) for card in self.sub_plan)
 
-        for card in self.json_data["card"]:
+        for card in self.sub_plan:
 
             # 根据中文和西文 分别根据距离相应的最大宽度的差值填充中西文空格
             width_c, width_e = calculate_width(card["name"])
@@ -430,7 +455,7 @@ class QMWEditorOfBattlePlan(QMainWindow):
 
     def card_list_be_dropped(self, index_from, index_to):
         """在list的drop事件中调用, 用于更新内部数据表"""
-        cards = self.json_data["card"]
+        cards = self.sub_plan
         if index_to != 0:
             # 将当前状态压入栈中
             self.append_undo_stack()
@@ -446,7 +471,7 @@ class QMWEditorOfBattlePlan(QMainWindow):
 
     def add_card(self):
 
-        ids_list = [card["id"] for card in self.json_data["card"]]
+        ids_list = [card["id"] for card in self.sub_plan]
         for i in range(1, 22):
             if i not in ids_list:
                 id_ = i
@@ -457,7 +482,7 @@ class QMWEditorOfBattlePlan(QMainWindow):
 
         name_ = "新的卡片"
 
-        self.json_data["card"].append(
+        self.sub_plan.append(
             {
                 "id": id_,
                 "name": name_,
@@ -467,8 +492,7 @@ class QMWEditorOfBattlePlan(QMainWindow):
             }
         )
 
-        self.load_data_to_ui_list()
-        self.refresh_chessboard()
+        self.fresh_card_plan()
 
     def update_card(self):
         index = self.current_edit_index
@@ -484,15 +508,15 @@ class QMWEditorOfBattlePlan(QMainWindow):
         self.append_undo_stack()
 
         index -= 1
-        card = self.json_data["card"][index]
+        card = self.sub_plan[index]
         card["id"] = int(self.WidgetIdInput.value())
         card["name"] = self.WidgetNameInput.text()
         card["ergodic"] = bool(self.WidgetErgodicInput.currentText() == 'true')  # 转化bool
         card["queue"] = bool(self.WidgetQueueInput.currentText() == 'true')  # 转化bool
         card["kun"] = self.WidgetKunInput.value()
         # self.WCurrentCard.setText("索引-{} 名称-{}".format(self.index - 1, card["name"]))
-        self.load_data_to_ui_list()
-        self.refresh_chessboard()
+
+        self.fresh_card_plan()
 
     def delete_card(self):
         index = self.current_edit_index
@@ -507,9 +531,9 @@ class QMWEditorOfBattlePlan(QMainWindow):
         self.append_undo_stack()
 
         index -= 1
-        del self.json_data["card"][index]
-        self.load_data_to_ui_list()
-        self.refresh_chessboard()
+        del self.sub_plan[index]
+
+        self.fresh_card_plan()
 
     def place_card(self, x, y):
         if self.current_edit_index is None:
@@ -529,7 +553,7 @@ class QMWEditorOfBattlePlan(QMainWindow):
             self.refresh_chessboard()
         else:
             # 当前index为卡片
-            target = self.json_data["card"][self.current_edit_index - 1]
+            target = self.sub_plan[self.current_edit_index - 1]
             # 如果这个位置已经有了这张卡片，那么移除它；否则添加它
             if location_key in target['location']:
                 target['location'].remove(location_key)
@@ -546,7 +570,7 @@ class QMWEditorOfBattlePlan(QMainWindow):
         if location in self.json_data["player"]:
             self.json_data["player"].remove(location)
         # 从卡片位置中删除
-        for card in self.json_data["card"]:
+        for card in self.sub_plan:
             if location in card["location"]:
                 card["location"].remove(location)
         # 更新界面显示
@@ -566,7 +590,7 @@ class QMWEditorOfBattlePlan(QMainWindow):
                     text += '\n玩家 {}'.format(player_location_list.index(location_key) + 1)
 
                 cards_in_this_location = []
-                for card in self.json_data["card"]:
+                for card in self.sub_plan:
                     if location_key in card['location']:
                         cards_in_this_location.append(card)
 
@@ -586,6 +610,20 @@ class QMWEditorOfBattlePlan(QMainWindow):
         """
         保存方法，拥有保存和另存为两种功能，还能创建uuid
         """
+
+        def clear_sub_plan():
+            """清理和默认方案完全相同的波次方案"""
+            # 收集需要移除的键
+            keys_to_remove = []
+            for wave, sub_plan in self.json_data["card"]["wave"].items():
+                if sub_plan == self.json_data["card"]["default"]:
+                    keys_to_remove.append(wave)
+
+            # 移除收集到的键
+            for wave in keys_to_remove:
+                self.json_data["card"]["wave"].pop(wave)
+
+        clear_sub_plan()
 
         is_save_as = self.sender() == self.ButtonSaveAs
 
@@ -632,7 +670,7 @@ class QMWEditorOfBattlePlan(QMainWindow):
 
         else:
             # 覆盖现有文件的情况
-            with g_extra.GLOBAL_EXTRA.file_lock:
+            with EXTRA.FILE_LOCK:
                 with open(file=new_file_path, mode='r', encoding='utf-8') as file:
                     tar_uuid = json.load(file).get('uuid', None)
 
@@ -654,7 +692,7 @@ class QMWEditorOfBattlePlan(QMainWindow):
         new_file_path = os.path.splitext(new_file_path)[0] + '.json'
 
         # 保存
-        with g_extra.GLOBAL_EXTRA.file_lock:
+        with EXTRA.FILE_LOCK:
             with open(file=new_file_path, mode='w', encoding='utf-8') as file:
                 json.dump(self.json_data, file, ensure_ascii=False, indent=4)
 
@@ -673,14 +711,13 @@ class QMWEditorOfBattlePlan(QMainWindow):
 
         if file_name:
             self.load_json(file_path=file_name)
-            # 为输入控件解锁 为保存当前解锁
-            self.input_widget_lock(True)
+
             self.ButtonSave.setEnabled(True)
 
     def load_json(self, file_path):
         """读取对应的json文件"""
 
-        with g_extra.GLOBAL_EXTRA.file_lock:
+        with EXTRA.FILE_LOCK:
             with open(file=file_path, mode='r', encoding='utf-8') as file:
                 self.json_data = json.load(file)
 
@@ -689,27 +726,51 @@ class QMWEditorOfBattlePlan(QMainWindow):
         # 初始化
         self.current_edit_index = None  # 初始化当前选中
         self.file_path = file_path  # 当前方案路径
+
         # 获取当前方案的名称
         current_plan_name = os.path.basename(file_path).replace(".json", "")
         self.current_plan_label.setText(
             f"当前编辑方案: {current_plan_name}, UUID:{self.json_data.get('uuid', '无')}")
-        # self.WCurrentCard.setText("无")
+
+        # 为输入控件锁定
+        self.input_widget_lock(True)
+
         self.WidgetIdInput.clear()
         self.WidgetNameInput.clear()
         self.WidgetErgodicInput.setCurrentIndex(0)
         self.WidgetQueueInput.setCurrentIndex(0)
-
-        # 根据数据绘制视图
-        self.load_data_to_ui_list()
-        self.refresh_chessboard()
-        # 清除所有按钮的高亮
-        self.remove_frame_color()
+        self.WidgetKunInput.clear()
 
         # 为输入控件信号解锁
         self.input_widget_lock(False)
 
+        self.fresh_card_plan()
+
         # 解锁部分输入控件
         self.input_widget_enabled(mode=False)
+
+    def fresh_card_plan(self):
+
+        # 加载子方案
+        self.get_current_sub_plan_cards()
+
+        # 根据数据绘制视图
+        self.load_data_to_ui_list()
+        self.refresh_chessboard()
+
+        # 清除所有按钮的高亮
+        self.remove_frame_color()
+
+    def change_wave(self, wave: str):
+
+        # 更新当前波次参数
+        if wave == "0":
+            self.sub_plan_index = ("default", None)
+        else:
+            self.sub_plan_index = ("wave", wave)
+
+        # 加载数据
+        self.fresh_card_plan()
 
     """撤回/重做"""
 
@@ -728,8 +789,7 @@ class QMWEditorOfBattlePlan(QMainWindow):
             current_state = copy.deepcopy(self.json_data)
             self.redo_stack.append(current_state)
             self.json_data = self.undo_stack.pop()
-            self.load_data_to_ui_list()
-            self.refresh_chessboard()
+            self.fresh_card_plan()
 
     def redo(self):
         """重做"""
@@ -737,8 +797,8 @@ class QMWEditorOfBattlePlan(QMainWindow):
             current_state = copy.deepcopy(self.json_data)
             self.undo_stack.append(current_state)
             self.json_data = self.redo_stack.pop()
-            self.load_data_to_ui_list()
-            self.refresh_chessboard()
+
+            self.fresh_card_plan()
 
     def set_my_font(self, my_font):
         """用于继承字体, 而不需要多次读取"""

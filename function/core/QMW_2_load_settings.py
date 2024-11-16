@@ -9,11 +9,11 @@ from PyQt6.QtGui import QRegularExpressionValidator
 from PyQt6.QtWidgets import QApplication, QMessageBox, QInputDialog
 
 from function.core.QMW_1_log import QMainWindowLog
-from function.globals import g_extra
+from function.globals import EXTRA, SIGNAL
 from function.globals import g_resources
 from function.globals.get_paths import PATHS
 from function.globals.log import CUS_LOGGER
-from function.scattered.check_uuid_in_battle_plan import fresh_and_check_battle_plan_uuid
+from function.scattered.check_battle_plan import fresh_and_check_all_battle_plan
 from function.scattered.get_list_battle_plan import get_list_battle_plan
 from function.scattered.get_task_sequence_list import get_task_sequence_list
 from function.scattered.test_route_connectivity import test_route_connectivity
@@ -67,7 +67,7 @@ class QMainWindowLoadSettings(QMainWindowLog):
         self.correct_settings_file()
 
         # 检测uuid是否存在于battle plan 没有则添加 并将其读入到内存资源中
-        fresh_and_check_battle_plan_uuid()
+        fresh_and_check_all_battle_plan()
 
         # 更新完毕后重新刷新对应资源
         g_resources.fresh_resource_cus_img()
@@ -129,7 +129,7 @@ class QMainWindowLoadSettings(QMainWindowLog):
         CUS_LOGGER.info(f"[订正FAA基础配置文件] 订正开始.")
 
         # 自旋锁读写, 防止多线程读写问题
-        with g_extra.GLOBAL_EXTRA.file_lock:
+        with EXTRA.FILE_LOCK:
 
             with open(file=file_path, mode="r", encoding="UTF-8") as file:
                 data_settings = json.load(file)
@@ -148,7 +148,7 @@ class QMainWindowLoadSettings(QMainWindowLog):
 
     def json_to_opt(self) -> None:
         # 自旋锁读写, 防止多线程读写问题
-        with g_extra.GLOBAL_EXTRA.file_lock:
+        with EXTRA.FILE_LOCK:
             with open(file=self.opt_path, mode="r", encoding="UTF-8") as file:
                 data = json.load(file)
 
@@ -159,7 +159,7 @@ class QMainWindowLoadSettings(QMainWindowLog):
         # dict → str 转换True和true
         json_str = json.dumps(self.opt, indent=4)
 
-        with g_extra.GLOBAL_EXTRA.file_lock:
+        with EXTRA.FILE_LOCK:
             with open(file=self.opt_path, mode="w", encoding="UTF-8") as file:
                 file.write(json_str)
 
@@ -173,7 +173,7 @@ class QMainWindowLoadSettings(QMainWindowLog):
             QMessageBox.information(
                 self,
                 "警告",
-                "你删除了被配置使用的战斗方案, 对应的战斗方案已恢复为默认方案!",
+                "您删除了被配置使用的战斗方案.\n对应的战斗方案已恢复为默认方案! 请点击保存配置!",
                 QMessageBox.StandardButton.Ok
             )
 
@@ -183,7 +183,7 @@ class QMainWindowLoadSettings(QMainWindowLog):
         :return:
         """
         battle_plan_name_list = get_list_battle_plan(with_extension=False)
-        battle_plan_uuid_list = g_extra.GLOBAL_EXTRA.battle_plan_uuid_list
+        battle_plan_uuid_list = list(EXTRA.BATTLE_PLAN_UUID_TO_PATH.keys())
         task_sequence_list = get_task_sequence_list(with_extension=False)
         self.cant_find_battle_plan_in_uuid = False
 
@@ -400,12 +400,12 @@ class QMainWindowLoadSettings(QMainWindowLog):
             # 点击频率
             self.CusCPS_Active.setChecked(my_opt["cus_cps_active"])
             self.CusCPS_Value.setValue(my_opt["cus_cps_value"])
-            g_extra.GLOBAL_EXTRA.click_per_second = my_opt["cus_cps_value"] if my_opt["cus_cps_active"] else 160
+            EXTRA.CLICK_PER_SECOND = my_opt["cus_cps_value"] if my_opt["cus_cps_active"] else 120
 
             # 最低FPS
             self.CusLowestFPS_Active.setChecked(my_opt["cus_lowest_fps_active"])
             self.CusLowestFPS_Value.setValue(my_opt["cus_lowest_fps_value"])
-            g_extra.GLOBAL_EXTRA.lowest_fps = my_opt["cus_lowest_fps_value"] if my_opt["cus_lowest_fps_active"] else 10
+            EXTRA.LOWEST_FPS = my_opt["cus_lowest_fps_value"] if my_opt["cus_lowest_fps_active"] else 10
 
             # link 加载的时候不做校验
             self.MisuLogistics_Link.setText(my_opt["misu_logistics_link"])
@@ -512,11 +512,11 @@ class QMainWindowLoadSettings(QMainWindowLog):
         task_sequence_list = get_task_sequence_list(with_extension=False)
 
         # 检测uuid是否存在于 可能新加入的 battle plan 没有则添加 并将其读入到内存资源中
-        fresh_and_check_battle_plan_uuid()
+        fresh_and_check_all_battle_plan()
         g_resources.fresh_resource_b()
 
         # 新的uuid list
-        battle_plan_uuid_list_new = g_extra.GLOBAL_EXTRA.battle_plan_uuid_list
+        battle_plan_uuid_list_new = list(EXTRA.BATTLE_PLAN_UUID_TO_PATH.keys())
 
         def my_transformer_b(tar_widget: object, opt_1, opt_2) -> None:
             """用于配置 带有选单的 战斗方案"""
@@ -581,12 +581,12 @@ class QMainWindowLoadSettings(QMainWindowLog):
             # 点击频率
             my_opt["cus_cps_active"] = self.CusCPS_Active.isChecked()
             my_opt["cus_cps_value"] = self.CusCPS_Value.value()
-            g_extra.GLOBAL_EXTRA.click_per_second = my_opt["cus_cps_value"] if my_opt["cus_cps_active"] else 160
+            EXTRA.CLICK_PER_SECOND = my_opt["cus_cps_value"] if my_opt["cus_cps_active"] else 120
 
             # 最低FPS
             my_opt["cus_lowest_fps_active"] = self.CusLowestFPS_Active.isChecked()
             my_opt["cus_lowest_fps_value"] = self.CusLowestFPS_Value.value()
-            g_extra.GLOBAL_EXTRA.lowest_fps = my_opt["cus_lowest_fps_value"] if my_opt["cus_lowest_fps_active"] else 10
+            EXTRA.LOWEST_FPS = my_opt["cus_lowest_fps_value"] if my_opt["cus_lowest_fps_active"] else 10
 
             # link 需要额外的检查
             url = self.MisuLogistics_Link.text()
@@ -595,10 +595,10 @@ class QMainWindowLoadSettings(QMainWindowLog):
             if url != "":
                 if result_bool:
                     my_opt["misu_logistics_link"] = url
-                    self.signal_dict["print_to_ui"].emit(
+                    SIGNAL.PRINT_TO_UI.emit(
                         text=f"FAA X 米苏物流 连通性测试 使用非默认url:{url} 成功!", color_level=3)
                 else:
-                    self.signal_dict["print_to_ui"].emit(
+                    SIGNAL.PRINT_TO_UI.emit(
                         text=f"FAA X 米苏物流 连通性测试 使用非默认url:{url} 失败! 将修正为默认url重试", color_level=1)
                     url = ""
                     my_opt["misu_logistics_link"] = url
@@ -608,12 +608,12 @@ class QMainWindowLoadSettings(QMainWindowLog):
             if url == "":
                 if result_bool:
                     my_opt["misu_logistics_link"] = url
-                    self.signal_dict["print_to_ui"].emit(
-                        text=f"FAA X 米苏物流 连通性测试 使用默认ulr 成功!", color_level=3)
+                    SIGNAL.PRINT_TO_UI.emit(
+                        text=f"FAA X 米苏物流 连通性测试 使用默认url 成功!", color_level=3)
                 else:
-                    self.signal_dict["print_to_ui"].emit(
-                        text=f"FAA X 米苏物流 连通性测试 使用默认ulr 失败!", color_level=1)
-                    self.signal_dict["print_to_ui"].emit(
+                    SIGNAL.PRINT_TO_UI.emit(
+                        text=f"FAA X 米苏物流 连通性测试 使用默认url 失败!", color_level=1)
+                    SIGNAL.PRINT_TO_UI.emit(
                         text=f"内置url可能已过期, 推荐更新url, 以防请求等待超时, 降低战斗效率!!!", color_level=1)
 
         def senior_settings() -> None:
@@ -820,11 +820,10 @@ class QMainWindowLoadSettings(QMainWindowLog):
 
     def click_btn_save(self) -> None:
         """点击保存配置按钮的函数"""
-        self.signal_dict["print_to_ui"].emit(text="", time=False)
+        SIGNAL.PRINT_TO_UI.emit(text="", time=False)
         self.ui_to_opt()
         self.opt_to_json()
-        self.signal_dict["print_to_ui"].emit(
-            text=f"方案:[{self.CurrentPlan.currentText()}] 已保存!", color_level=3)
+        SIGNAL.PRINT_TO_UI.emit(text=f"方案:[{self.CurrentPlan.currentText()}] 已保存!", color_level=3)
 
     def delete_current_plan(self) -> None:
         """用来删掉当前被选中的 todo plan 但不能删掉默认方案"""
