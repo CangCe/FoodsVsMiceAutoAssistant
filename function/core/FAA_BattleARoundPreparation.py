@@ -461,13 +461,13 @@ class BattleARoundPreparation:
             print_info(text="[翻宝箱UI] 捕获到正确标志, 翻牌并退出...")
             # 开始洗牌
             #T_ACTION_QUEUE_TIMER.add_click_to_queue(handle=handle, x=708, y=502)
-            time.sleep(1)
+            #time.sleep(1)
 
             # 翻牌 1+2
             T_ACTION_QUEUE_TIMER.add_click_to_queue(handle=handle, x=557, y=265)
-            time.sleep(0.5)
+            time.sleep(0.1)
             T_ACTION_QUEUE_TIMER.add_click_to_queue(handle=handle, x=705, y=265)
-            time.sleep(0.5)
+            time.sleep(0.1)
 
             img = [
                 capture_image_png(

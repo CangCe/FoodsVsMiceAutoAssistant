@@ -247,10 +247,10 @@ class ThreadTodo(QThread):
                 self.faa_dict[2].get_dark_crystal()
 
         # 执行完毕后立刻刷新游戏 以清除二级输入状态
-        self.signal_print_to_ui.emit(
-            text=f"[{title_text}] [二级功能] 结束, 即将刷新游戏以清除二级输入的状态...", color_level=2)
+        #self.signal_print_to_ui.emit(
+        #    text=f"[{title_text}] [二级功能] 结束, 即将刷新游戏以清除二级输入的状态...", color_level=2)
 
-        self.batch_reload_game(player=player)
+        #self.batch_reload_game(player=player)
 
     def batch_reload_game(self, player: list = None):
         """
