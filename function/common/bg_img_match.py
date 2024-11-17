@@ -401,7 +401,7 @@ def loop_match_ps_in_w(
 
 
 if __name__ == '__main__':
-    from battle_plan_not_active.FAA import faa_get_handle
+    from function.core.FAA import faa_get_handle
 
 
     def main():
